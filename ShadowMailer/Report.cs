@@ -17,13 +17,15 @@ namespace ShadowMailer
         private string[] _attachments;
         private string[] _embeddedImages;
         private string[] _body;
+        private string _layout;
 
-        public Report(string name, string[] distroList, string[] attachments, string[]embeddedImages, string[] body, string subject = "Default Subject Setup", string from = "Mail@chewy.com")
+        public Report(string name, string[] distroList, string[] attachments, string[]embeddedImages, string[] body, string subject = "Default Subject Setup", string from = "Mail@chewy.com", string layout = "")
         {
             _name = name;
             _from = from;
             _subject = subject;
             _body = body;
+            _layout = layout;
             _distroList = distroList;
             _attachments = attachments;
             _embeddedImages = embeddedImages;
@@ -63,6 +65,11 @@ namespace ShadowMailer
         {
             get { return _from; }
             set { _from = value; }
+        }
+        public string Layout
+        {
+            get { return _layout; }
+            set { _layout = value; }
         }
     }
 }

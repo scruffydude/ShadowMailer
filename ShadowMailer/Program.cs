@@ -23,6 +23,7 @@ namespace ShadowMailer
         private static readonly string reportXmlList = @"C:\Users\camos\source\repos\ShadowMailer\ShadowMailer\ReportsList.xml";
         private static string[] testImages = { @"C:\Users\camos\Desktop\test.jpg", @"C:\Users\camos\Desktop\test2.jpg", @"C:\Users\camos\Desktop\test3.jpg", @"C:\Users\camos\Desktop\test.jpg", @"C:\Users\camos\Desktop\test.jpg", @"C:\Users\camos\Desktop\test2.jpg", @"C:\Users\camos\Desktop\test3.jpg", @"C:\Users\camos\Desktop\test.jpg" };
         private static string[] testBody = { @"C:\Users\camos\Desktop\test.jpg", @"C:\Users\camos\Desktop\test2.jpg", @"C:\Users\camos\Desktop\test3.jpg", @"C:\Users\camos\Desktop\test.jpg" };
+        private static string testLayout = "IIBIIBIIF";
 
         static void Main(string[] args)
         {
@@ -43,7 +44,8 @@ namespace ShadowMailer
 
                 foreach(Report currentReport in Reports)
                 {
-                    SendMail(currentReport.Sender, currentReport.DistroList, currentReport.SubjectLine, currentReport.BodyText[0], testImages);
+                    buildBodyTable(currentReport.Images, currentReport.BodyText, currentReport.Layout);
+                    SendMail(currentReport.Sender, currentReport.DistroList, currentReport.SubjectLine, currentReport.BodyText, testImages, currentReport.Layout);
                 }
             }
 
@@ -60,7 +62,7 @@ namespace ShadowMailer
         }
 
 
-        public static void SendMail(string from, string[] toList, string subject, string body, string[] ImageLocations)
+        public static void SendMail(string from, string[] toList, string subject, string[] body, string[] ImageLocations, string layoutControl)
         {
             var SMTPClient = new SmtpClient("smtp.chewy.local", 587);
 
@@ -75,12 +77,12 @@ namespace ShadowMailer
 
             message.Subject = subject;
 
-            message.AlternateViews.Add(getBody(ImageLocations, body));
+            message.AlternateViews.Add(buildBodyTable(ImageLocations, body, layoutControl));//getBody(ImageLocations, body, layoutControl));
             SMTPClient.Send(message);
             log.Info("Mail Sent");
         }
 
-        private static AlternateView getBody(string[] filePaths, string body)
+        private static AlternateView getBody(string[] filePaths, string body, string layoutControl)
         {
             AlternateView alternateView = null;
             string htmlBody = "<html>" + body;
@@ -105,6 +107,68 @@ namespace ShadowMailer
             return alternateView;
         }
 
+        public static AlternateView buildBodyTable(string[] filepaths, string[] body, string layoutControl)
+        {
+            AlternateView alternateView = null;
+            string htmlBody = "<html><body>";
+            int i = 0;
+            List<LinkedResource> resources = new List<LinkedResource>();
+            htmlBody += @"<h1>This is a test</h1></br></br><table >";
+            double tableRows = 0;
+            int textBodyElements = body.Length;
+            int b = 0;
+            int f = 0;
+
+            foreach(char c in layoutControl)
+            {
+                switch (c)
+                {
+                    case 'B':
+                        tableRows++;
+                        log.Info("<tr><td colspan=\"2\" >{0}</td></tr>     {1}", body[b], c);
+                        htmlBody += "<tr><td colspan=\"2\" >" +body[b]+ "</td></tr>";
+                        b++;
+                        break;
+                    case 'I':
+                        tableRows += .5;
+                        if (i % 2 == 0)
+                        {
+                            htmlBody += @"<tr>";
+                        }
+                        log.Info("<tr><td>{0}</td></tr>     {1}", filepaths[i], c);
+                        LinkedResource res = new LinkedResource(filepaths[i]);
+                        res.ContentId = Guid.NewGuid().ToString();
+                        htmlBody += @"<td ><img src='cid:" + res.ContentId + @"' /></td>";
+                        resources.Add(res);
+                        if (i % 2 != 0)
+                        {
+                            htmlBody += @"</tr>";
+                        }
+                        i++;
+                        break;
+                    case 'F':
+                        tableRows++;
+                        log.Info("<tr><td colspan=\"2\" >{0}</td></tr>     {1}", filepaths[i], c);
+                        res = new LinkedResource(filepaths[i]);
+                        res.ContentId = Guid.NewGuid().ToString();
+                        htmlBody += "<td colspan=\"2\"><img src='cid:" + res.ContentId + @"' /></td>";
+                        resources.Add(res);
+                        f++;
+                        break;
+                    default:
+                        log.Warn("Character Designation not found skipping....");
+                        break;
+                }
+               // log.Info("Last Charcter Parsed: {0} Current Row Count: {1}", c, tableRows);
+            }
+            htmlBody += "</table>";
+            alternateView = AlternateView.CreateAlternateViewFromString(htmlBody, null, MediaTypeNames.Text.Html);
+            resources.ForEach(x => alternateView.LinkedResources.Add(x));
+
+
+            return alternateView;
+        }
+
         private static string buildXmlFile(List<Report> reportsList)
         {
             XmlDocument reports = new XmlDocument();
@@ -125,6 +189,7 @@ namespace ShadowMailer
                 {
                     CreateNewChildXmlNode(reports, ReportParent.LastChild, "Recipiant", recepiant.ToString());
                 }
+                CreateNewChildXmlNode(reports, ReportParent, "Layout", report.Layout.ToString());
 
             }
 
@@ -153,7 +218,7 @@ namespace ShadowMailer
 
                 foreach (XmlNode Report in ReportMaster.DocumentElement.ChildNodes)
                 {
-                    temp = new Report("Default", DefaultDistro, DefaultAttachments, testImages, testBody);
+                    temp = new Report("Default", DefaultDistro, DefaultAttachments, testImages, testBody, layout: testLayout);
                     foreach (XmlNode reportInfo in Report.ChildNodes)
                     {
                         switch (reportInfo.Name)
@@ -163,6 +228,11 @@ namespace ShadowMailer
                                 break;
                             case "SubjectLine":
                                 temp.SubjectLine = reportInfo.InnerText;
+                                break;
+                            case "Layout":
+                                temp.Layout = reportInfo.InnerText;
+                                break;
+                            case "Recipiants":
                                 break;
                             default:
                                 log.Warn("XML Node not found: {0}", reportInfo.Name);
@@ -176,7 +246,7 @@ namespace ShadowMailer
             }
             catch
             {
-                Report test = new Report("TestReport", DefaultDistro, DefaultAttachments, testImages, testBody);
+                Report test = new Report("TestReport", DefaultDistro, DefaultAttachments, testImages, testBody, layout: testLayout);
                 ReportList.Add(test);
 
 
