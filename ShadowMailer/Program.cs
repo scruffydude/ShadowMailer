@@ -12,6 +12,7 @@ using System.IO;
 using System.Net;
 using System.Net.Mail;
 using System.Net.Mime;
+using System.Diagnostics;
 
 namespace ShadowMailer
 {
@@ -23,7 +24,10 @@ namespace ShadowMailer
         private static readonly string reportXmlList = @"C:\Users\camos\source\repos\ShadowMailer\ShadowMailer\ReportsList.xml";
         private static string[] testImages = { @"C:\Users\camos\Desktop\test.jpg", @"C:\Users\camos\Desktop\test2.jpg", @"C:\Users\camos\Desktop\test3.jpg", @"C:\Users\camos\Desktop\test.jpg", @"C:\Users\camos\Desktop\test.jpg", @"C:\Users\camos\Desktop\test2.jpg", @"C:\Users\camos\Desktop\test3.jpg", @"C:\Users\camos\Desktop\test.jpg" };
         private static string[] testBody = { @"C:\Users\camos\Desktop\test.jpg", @"C:\Users\camos\Desktop\test2.jpg", @"C:\Users\camos\Desktop\test3.jpg", @"C:\Users\camos\Desktop\test.jpg" };
-        private static string testLayout = "IIBIIBIIF";
+        private static string testLayout = "BIIBIIIIF";
+        private static string testcommand = @"\\cfc1afs01\Operations-Analytics\Projects\CSharp\labor-plan\Solutions\mcoapp\mcoapp\bin\Release\mcoapp.exe";
+        private static string testworkbook = @"C:\Users\camos\Desktop\testExcel.xlsx";
+        private static string testRange = "B5";
 
         static void Main(string[] args)
         {
@@ -35,6 +39,7 @@ namespace ShadowMailer
 
             if(testing)
             {
+                CollectImageFromExcelRange(testworkbook, testRange);
                 log.Warn("Testing Mode activated may cause instability please review Build");
 
             }
@@ -44,8 +49,14 @@ namespace ShadowMailer
 
                 foreach(Report currentReport in Reports)
                 {
-                    buildBodyTable(currentReport.Images, currentReport.BodyText, currentReport.Layout);
-                    SendMail(currentReport.Sender, currentReport.DistroList, currentReport.SubjectLine, currentReport.BodyText, testImages, currentReport.Layout);
+                    if (currentReport.RunHour == System.DateTime.Now.Hour)
+                    {
+                        if (currentReport.ExecutablePath != "UNDEFINED")
+                        {
+                            RunExternalDataManipulation(currentReport.ExecutablePath);
+                        }
+                        SendMail(currentReport.Sender, currentReport.DistroList, currentReport.SubjectLine, currentReport.BodyText, testImages, currentReport.Layout);
+                    }
                 }
             }
 
@@ -61,6 +72,10 @@ namespace ShadowMailer
             LogManager.Flush();
         }
 
+        public static void CollectImageFromExcelRange(string workbookPath, string picRange)
+        {
+
+        }
 
         public static void SendMail(string from, string[] toList, string subject, string[] body, string[] ImageLocations, string layoutControl)
         {
@@ -82,93 +97,63 @@ namespace ShadowMailer
             log.Info("Mail Sent");
         }
 
-        private static AlternateView getBody(string[] filePaths, string body, string layoutControl)
-        {
-            AlternateView alternateView = null;
-            string htmlBody = "<html>" + body;
-            int i = 0;
-            List<LinkedResource> resources = new List<LinkedResource>();
-            htmlBody += @"<h1>This is a test</h1></br></br><table ><tr>";
-            foreach (string filePath in filePaths)
-            {
-                if (i%2 == 0) {
-                    htmlBody += @"</tr><tr>";
-                }
-                LinkedResource res = new LinkedResource(filePath);
-                res.ContentId = Guid.NewGuid().ToString();
-                htmlBody +=@"<td ><img src='cid:" + res.ContentId + @"' /></td>";
-                resources.Add(res);
-                i++;
-                
-            }
-            htmlBody += "</tr></table>";
-            alternateView = AlternateView.CreateAlternateViewFromString(htmlBody, null, MediaTypeNames.Text.Html);
-            resources.ForEach(x => alternateView.LinkedResources.Add(x));
-            return alternateView;
-        }
-
         public static AlternateView buildBodyTable(string[] filepaths, string[] body, string layoutControl)
         {
             AlternateView alternateView = null;
-            string htmlBody = "<html><body>";
-            int i = 0;
             List<LinkedResource> resources = new List<LinkedResource>();
+
+
+            string htmlBody = "<html><body>";
             htmlBody += @"<h1>This is a test</h1></br></br><table >";
-            double tableRows = 0;
-            int textBodyElements = body.Length;
+
+            //these are counters are used to cycle through the element refernces in the body and images setup
             int b = 0;
-            int f = 0;
+            int i = 0;
 
             foreach(char c in layoutControl)
             {
                 switch (c)
                 {
                     case 'B':
-                        tableRows++;
-                        log.Info("<tr><td colspan=\"2\" >{0}</td></tr>     {1}", body[b], c);
                         htmlBody += "<tr><td colspan=\"2\" >" +body[b]+ "</td></tr>";
                         b++;
                         break;
                     case 'I':
-                        tableRows += .5;
                         if (i % 2 == 0)
-                        {
                             htmlBody += @"<tr>";
-                        }
-                        log.Info("<tr><td>{0}</td></tr>     {1}", filepaths[i], c);
-                        LinkedResource res = new LinkedResource(filepaths[i]);
-                        res.ContentId = Guid.NewGuid().ToString();
-                        htmlBody += @"<td ><img src='cid:" + res.ContentId + @"' /></td>";
-                        resources.Add(res);
+
+                        resources.Add(getImage(filepaths[i], ref htmlBody));
+
                         if (i % 2 != 0)
-                        {
                             htmlBody += @"</tr>";
-                        }
+
                         i++;
                         break;
                     case 'F':
-                        tableRows++;
-                        log.Info("<tr><td colspan=\"2\" >{0}</td></tr>     {1}", filepaths[i], c);
-                        res = new LinkedResource(filepaths[i]);
-                        res.ContentId = Guid.NewGuid().ToString();
-                        htmlBody += "<td colspan=\"2\"><img src='cid:" + res.ContentId + @"' /></td>";
-                        resources.Add(res);
-                        f++;
+                        resources.Add(getImage(filepaths[i], ref htmlBody));
+                        i++;
                         break;
                     default:
                         log.Warn("Character Designation not found skipping....");
                         break;
                 }
-               // log.Info("Last Charcter Parsed: {0} Current Row Count: {1}", c, tableRows);
             }
-            htmlBody += "</table>";
+
+            htmlBody += "</table></html>";
             alternateView = AlternateView.CreateAlternateViewFromString(htmlBody, null, MediaTypeNames.Text.Html);
             resources.ForEach(x => alternateView.LinkedResources.Add(x));
-
 
             return alternateView;
         }
 
+        private static LinkedResource getImage(string filePath, ref string htmlBody)
+        {
+            LinkedResource res = new LinkedResource(filePath);
+            res.ContentId = Guid.NewGuid().ToString();
+            htmlBody += @"<td ><img src='cid:" + res.ContentId + @"' /></td>";
+            return res;
+
+        }
         private static string buildXmlFile(List<Report> reportsList)
         {
             XmlDocument reports = new XmlDocument();
@@ -180,20 +165,36 @@ namespace ShadowMailer
             foreach (Report report in reportsList)
             {
 
-                XmlNode ReportParent = reports.CreateElement(report.ReportName);
-                reportsRoot.AppendChild(ReportParent);
-                CreateNewChildXmlNode(reports, ReportParent, "ReportName", report.ReportName.ToString());
-                CreateNewChildXmlNode(reports, ReportParent, "SubjectLine", report.SubjectLine.ToString());
-                CreateNewChildXmlNode(reports, ReportParent, "Recipiants", report.DistroList[0].ToString());
-                foreach (string recepiant in report.DistroList)
-                {
-                    CreateNewChildXmlNode(reports, ReportParent.LastChild, "Recipiant", recepiant.ToString());
-                }
-                CreateNewChildXmlNode(reports, ReportParent, "Layout", report.Layout.ToString());
+                XmlNode CurrentReportParent = reports.CreateElement(report.ReportName);
+                reportsRoot.AppendChild(CurrentReportParent);
+                CreateNewChildXmlNode(reports, CurrentReportParent, "ReportName", report.ReportName.ToString());
+                CreateNewChildXmlNode(reports, CurrentReportParent, "SubjectLine", report.SubjectLine.ToString());
+                CreateNewChildXmlNode(reports, CurrentReportParent, "Sender", report.Sender.ToString());
+
+                CreateChildNodeFromArray("Recipient", report.DistroList, reports, CurrentReportParent);
+
+                CreateChildNodeFromArray("BodyText", report.BodyText, reports, CurrentReportParent);
+
+                CreateChildNodeFromArray("Image", report.Images, reports, CurrentReportParent);
+
+                CreateNewChildXmlNode(reports, CurrentReportParent, "Layout", report.Layout.ToString());
+                CreateNewChildXmlNode(reports, CurrentReportParent, "ExternalExecutable", report.ExecutablePath.ToString());
+                CreateNewChildXmlNode(reports, CurrentReportParent, "RunHour", report.RunHour.ToString());
 
             }
 
             return reports.InnerXml;
+        }
+
+        public static void CreateChildNodeFromArray(string childNodeName, string[] elementArray, XmlDocument document, XmlNode parentNode)
+        {
+            XmlNode newNode = document.CreateElement(childNodeName+"s");
+            parentNode.AppendChild(newNode);
+
+            foreach(string element in elementArray)
+            {
+                CreateNewChildXmlNode(document, newNode, childNodeName, element);
+            }
         }
 
         public static void CreateNewChildXmlNode(XmlDocument document, XmlNode parentNode, string elementName, object value)
@@ -232,7 +233,23 @@ namespace ShadowMailer
                             case "Layout":
                                 temp.Layout = reportInfo.InnerText;
                                 break;
-                            case "Recipiants":
+                            case "Recipients":
+                                temp.DistroList = populateArrayfromXML(reportInfo);
+                                break;
+                            case "Sender":
+                                temp.Sender = reportInfo.InnerText;
+                                break;
+                            case "ExternalExecutable":
+                                temp.ExecutablePath = reportInfo.InnerText;
+                                break;
+                            case "RunHour":
+                                temp.RunHour = int.Parse(reportInfo.InnerText);
+                                break;
+                            case "BodyTexts":
+                                temp.BodyText = populateArrayfromXML(reportInfo);
+                                break;
+                            case "Images":
+                                temp.Images = populateArrayfromXML(reportInfo);
                                 break;
                             default:
                                 log.Warn("XML Node not found: {0}", reportInfo.Name);
@@ -248,11 +265,28 @@ namespace ShadowMailer
             {
                 Report test = new Report("TestReport", DefaultDistro, DefaultAttachments, testImages, testBody, layout: testLayout);
                 ReportList.Add(test);
-
-
             }
 
             return ReportList;
+        }
+
+        public static string[] populateArrayfromXML(XmlNode parent)
+        {
+            List<string> templist = new List<string>();
+
+            foreach(XmlNode child  in parent)
+            {
+                templist.Add(child.InnerText);
+            }
+
+            return templist.ToArray();
+
+        }
+
+        public static void RunExternalDataManipulation(string commandInformantion)
+        {
+            var process  = Process.Start(commandInformantion);
+            process.WaitForExit();
         }
 
     }
